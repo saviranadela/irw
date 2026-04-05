@@ -2,10 +2,12 @@ library(tidyverse)
 library(haven)
 library(labelled)
 
-df <- read_sav('R305A180293_child-level_CT_v33.sav')
+# load data
+df <- read_sav('R305A180293_child-level_CT_v35.sav')
 
 names(df) <- tolower(names(df))
 
+# select relevant columns
 df <- df |>
   select(contains('ss1'),
          contains('ss2'),
@@ -72,28 +74,19 @@ df <- df |>
          -wj_apw_t1,
          -wj_apss_t1,
          -contains('notes')) |>
-  # replace invalid values with NA, change others to 0/1 wrong/right binary
-  mutate(across(starts_with('dn'), ~if_else(. == 1, NA, .)),
-         across(starts_with('dn'), ~if_else(. == 2, 1, .)),
-         across(contains('_1s_') | contains('_2s_') | contains('_3s_') | contains('_4s_') | contains('_5s_') | contains('_6s_'), 
-                ~if_else(. == 1, 0, .)),
-         across(contains('_1s_') | contains('_2s_') | contains('_3s_') | contains('_4s_') | contains('_5s_') | contains('_6s_'), 
-                ~if_else(. == 2, 1, .)),
-         across(starts_with('htks'), ~if_else(. == 1, 0, .)),
-         across(starts_with('htks'), ~if_else(. == 2, 1, .)),
-         across(starts_with('box'), ~if_else(. == 0.5, NA, .)),
-         # create participant ID
-         id = row_number())
+  mutate(
+    across(starts_with('box'), ~if_else(. == 0.5, NA, .)),
+    id = row_number()
+  )
 
-# find variables with no response or single responses to drop
-# put them in a list to drop
+# drop empty / single-response variables
 drop_vars <- c()
 
 for (i in 1:ncol(df)) {
   unique_vals <- unique(df[[i]])
   unique_len <- length(unique_vals)
   
-  if (unique_len == 1 & is.na(unique(unique_vals[1]))) {
+  if (unique_len == 1 & is.na(unique_vals[1])) {
     drop_vars <- append(drop_vars, names(df)[i])
   }
   
@@ -104,35 +97,45 @@ for (i in 1:ncol(df)) {
   }
 }
 
-# drop variables with no responses or singular resposes
-df <- df |>
+# reshape to long (item = original name)
+df_long <- df |>
   select(-all_of(drop_vars)) |>
-  # pivot df to be long by item
   pivot_longer(cols = -id,
-               names_to = 'item',
-               values_to = 'resp',
-               values_drop_na = T)
-  
-# create item IDs for each survey item
-items <- as.data.frame(unique(df$item))
-items <- items |>
-  mutate(item_id = row_number())
+               names_to = "item",
+               values_to = "resp",
+               values_drop_na = TRUE)
 
-df <- df |>
-  # merge item IDs with df
-  left_join(items, 
-            by=c("item" = "unique(df$item)")) |>
-  # drop character item variable
-  select(id, item_id, resp) |>
-  # use item_id column as the item column
-  rename(item = item_id) |>
-  arrange(id, item)
+# remove labels
+df_long$resp <- remove_labels(df_long$resp)
 
-# remove obsolete label for resp column
-df$resp <- remove_labels(df$resp)
+preschool_sel_pl <- df_long |>
+  filter(str_detect(item, "ss") | str_detect(item, "as"))
 
-# print response values
-table(df$resp)
+preschool_sel_dn <- df_long |>
+  filter(str_detect(item, "dn"))
 
-# save df to Rdata file
-save(df, file="preschool_sel.Rdata")
+preschool_sel_wj <- df_long |>
+  filter(str_detect(item, "wj"))
+
+preschool_sel_akt <- df_long |>
+  filter(str_detect(item, "_[1-6]s_"))
+
+preschool_sel_box <- df_long |>
+  filter(str_detect(item, "box"))
+
+preschool_sel_emt <- df_long |>
+  filter(str_detect(item, "emt"))
+
+preschool_sel_htks <- df_long |>
+  filter(str_detect(item, "htks"))
+
+save(preschool_sel_pl,  file = "preschool_sel_pl.Rdata")
+save(preschool_sel_dn,  file = "preschool_sel_dn.Rdata")
+save(preschool_sel_wj,  file = "preschool_sel_wj.Rdata")
+save(preschool_sel_akt, file = "preschool_sel_akt.Rdata")
+save(preschool_sel_box, file = "preschool_sel_box.Rdata")
+save(preschool_sel_emt, file = "preschool_sel_emt.Rdata")
+save(preschool_sel_htks,file = "preschool_sel_htks.Rdata")
+
+# check
+table(df_long$resp)
